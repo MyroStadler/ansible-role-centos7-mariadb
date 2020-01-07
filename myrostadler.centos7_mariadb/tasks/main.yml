@@ -1,0 +1,54 @@
+---
+# tasks file for centos7_mariadb
+- name: Install MariaDb and initialise database
+  yum:
+    name: mariadb-server #debian: mysql-server
+    state: present
+
+- name: Install the Python MySQL Support Libraries
+  yum: pkg=MySQL-python state=present
+
+- name: Start mysql server and enable it on reboot
+  service:
+    name: mariadb #debian: mysql
+    state: started
+    enabled: true
+
+# See notes on https://docs.ansible.com/ansible/latest/modules/mysql_user_module.html
+- name: Update mysql root password...
+  mysql_user:
+    name: root
+    host_all: true
+    password: "{{ env_database_root_password }}"
+    # DO NOT HAVE 'check_implicit_admin: true'! This breaks idempotence, does not use ~/.my.conf
+    check_implicit_admin: false
+    priv: "*.*:ALL,GRANT"
+
+- name: ...and create .my.cnf
+  template:
+    src: "mysql.cnf.j2"
+    dest: "~/.my.cnf"
+    owner: root
+    group: root
+    mode: 0600
+
+- name: "Update mysql password for all {{ env_database_user }} accounts"
+  mysql_user:
+    name: "{{ env_database_user }}"
+    host: "{{ item }}"
+    password: "{{ env_database_password }}"
+    # DO NOT HAVE 'check_implicit_admin: true'! This breaks idempotence, does not use ~/.my.conf
+    check_implicit_admin: false
+    priv: "*.*:ALL,GRANT"
+    # have to use with_items, 'host_all: true' is not allowed for new user
+  with_items:
+    - localhost
+    - "{{ ansible_hostname }}"
+    - "::1"
+    - 127.0.0.1
+
+- name: "Ensure DB exists (if specified)"
+  mysql_db:
+    name: "{{ website_install_env_database_name }}"
+    state: present
+  when: website_install_env_database_name != ''

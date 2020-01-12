@@ -23,6 +23,7 @@
     # DO NOT HAVE 'check_implicit_admin: true'! This breaks idempotence, does not use ~/.my.conf
     check_implicit_admin: false
     priv: "*.*:ALL,GRANT"
+  when: install_database and env_database_root_password is defined and env_database_root_password != ''
 
 - name: ...and create .my.cnf
   template:
@@ -31,6 +32,22 @@
     owner: root
     group: root
     mode: 0600
+  when: install_database and env_database_root_password is defined and env_database_root_password != ''
+
+- name: Determine MySQL host entries
+  set_fact:
+    mysql_host_entries:
+      - localhost
+      - "{{ ansible_hostname }}"
+      - "::1"
+      - 127.0.0.1
+  when: mysql_host_entries is not defined
+
+- name: Add dynamic MySQL host entries
+  set_fact:
+    mysql_host_entries: "{{ mysql_host_entries + [ item.ip ] }}"
+  with_items: "{{ allow_external_connections_from }}"
+  when: allow_external_connections_from is defined
 
 - name: "Update mysql password for all {{ env_database_user }} accounts"
   mysql_user:
@@ -41,14 +58,11 @@
     check_implicit_admin: false
     priv: "*.*:ALL,GRANT"
     # have to use with_items, 'host_all: true' is not allowed for new user
-  with_items:
-    - localhost
-    - "{{ ansible_hostname }}"
-    - "::1"
-    - 127.0.0.1
+  with_items: "{{ mysql_host_entries }}"
+  when: install_database and env_database_user is defined and env_database_user != '' and env_database_password is defined and env_database_password != ''
 
 - name: "Ensure DB exists (if specified)"
   mysql_db:
-    name: "{{ website_install_env_database_name }}"
+    name: "{{ install_env_database_name }}"
     state: present
-  when: website_install_env_database_name != ''
+  when: install_database and install_env_database_name is defined and install_env_database_name != ''
